@@ -1,17 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jman-berg/chirpy/internal/auth"
 	"github.com/jman-berg/chirpy/internal/database"
-
-	"encoding/json"
 )
 
-func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handlerUpdateUser(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -25,10 +24,20 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}
 
+	bearer_token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't get a valid bearer token", err)
+	}
+
+	userId, err := auth.ValidateJWT(bearer_token, cfg.secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Token is not valid", err)
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
 	if err := decoder.Decode(&params); err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
+		respondWithError(w, http.StatusInternalServerError, "Invalid request body", err)
 	}
 
 	hashedPassword, err := auth.HashPassword(params.Password)
@@ -36,22 +45,18 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		respondWithError(w, http.StatusInternalServerError, "Error hashing password", err)
 	}
 
-	user, err := cfg.db.CreateUser(r.Context(), database.CreateUserParams{
+	user, err := cfg.db.UpdateUser(r.Context(), database.UpdateUserParams{
 		Email:          params.Email,
 		HashedPassword: hashedPassword,
+		ID:             userId,
 	})
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't register user:", err)
-	}
 
-	respBody := returnVals{
-		ID:          user.ID,
+	respondWithJSON(w, http.StatusOK, returnVals{
+		ID:          userId,
+		Email:       user.Email,
 		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
-		Email:       user.Email,
 		IsChirpyRed: user.IsChirpyRed,
-	}
-
-	respondWithJSON(w, http.StatusCreated, respBody)
+	})
 
 }

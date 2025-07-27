@@ -42,14 +42,28 @@ func (q *Queries) CreateChirp(ctx context.Context, arg CreateChirpParams) (Chirp
 	return i, err
 }
 
+const deleteChirp = `-- name: DeleteChirp :exec
+DELETE FROM chirps WHERE id = $1 AND user_id = $2
+`
+
+type DeleteChirpParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) DeleteChirp(ctx context.Context, arg DeleteChirpParams) error {
+	_, err := q.db.ExecContext(ctx, deleteChirp, arg.ID, arg.UserID)
+	return err
+}
+
 const getChirp = `-- name: GetChirp :one
 SELECT id, created_at, updated_at, body, user_id FROM chirps
-WHERE ID = $1
+WHERE user_id = $1
 LIMIT (1)
 `
 
-func (q *Queries) GetChirp(ctx context.Context, id uuid.UUID) (Chirp, error) {
-	row := q.db.QueryRowContext(ctx, getChirp, id)
+func (q *Queries) GetChirp(ctx context.Context, userID uuid.UUID) (Chirp, error) {
+	row := q.db.QueryRowContext(ctx, getChirp, userID)
 	var i Chirp
 	err := row.Scan(
 		&i.ID,
@@ -63,11 +77,12 @@ func (q *Queries) GetChirp(ctx context.Context, id uuid.UUID) (Chirp, error) {
 
 const getChirps = `-- name: GetChirps :many
 SELECT id, created_at, updated_at, body, user_id FROM chirps
+WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000' OR user_id = $1::uuid)
 ORDER BY created_at ASC
 `
 
-func (q *Queries) GetChirps(ctx context.Context) ([]Chirp, error) {
-	rows, err := q.db.QueryContext(ctx, getChirps)
+func (q *Queries) GetChirps(ctx context.Context, uuidFilter uuid.UUID) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getChirps, uuidFilter)
 	if err != nil {
 		return nil, err
 	}

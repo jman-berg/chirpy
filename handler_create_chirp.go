@@ -2,20 +2,30 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/google/uuid"
-	"github.com/jman-berg/chirpy/internal/database"
 	"net/http"
+
+	"github.com/jman-berg/chirpy/internal/auth"
+	"github.com/jman-berg/chirpy/internal/database"
 )
 
 func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request) {
+	bearer_token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't get a valid bearer token", err)
+	}
+
+	validatedUserId, err := auth.ValidateJWT(bearer_token, cfg.secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Token is not valid", err)
+	}
+
 	type parameters struct {
-		Body   string `json:"body"`
-		UserID string `json:"user_id"`
+		Body string `json:"body"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 	}
@@ -26,14 +36,9 @@ func (cfg *apiConfig) handlerCreateChirp(w http.ResponseWriter, r *http.Request)
 
 	cleanedBody := censorBadWords(params.Body)
 
-	userID, err := uuid.Parse(params.UserID)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid userID", err)
-	}
-
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   cleanedBody,
-		UserID: userID,
+		UserID: validatedUserId,
 	})
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create chirp", err)

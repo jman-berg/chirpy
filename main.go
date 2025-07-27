@@ -18,6 +18,8 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	secret         string
+	polkaApiKey    string
 }
 
 func main() {
@@ -31,19 +33,31 @@ func main() {
 		log.Fatal("PLATFORM must be set")
 	}
 
+	secret := os.Getenv("SECRET")
+	if secret == "" {
+		log.Fatal("SECRET must be set")
+	}
+
+	polka_api_key := os.Getenv("POLKA_KEY")
+	if polka_api_key == "" {
+		log.Fatal("POLKA_API_KEY must be set")
+	}
+
 	const port = "8080"
 	const directoryroot = "."
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Fatalf("Error connecting to database: %w:", err)
+		log.Fatalf("Error connecting to database: %v", err)
 	}
 
 	dbQueries := database.New(db)
 
 	apiCfg := apiConfig{
-		db:       dbQueries,
-		platform: env,
+		db:          dbQueries,
+		platform:    env,
+		secret:      secret,
+		polkaApiKey: polka_api_key,
 	}
 
 	handlerFileServer := http.StripPrefix("/app/", http.FileServer(http.Dir(directoryroot)))
@@ -54,13 +68,20 @@ func main() {
 
 	mux.HandleFunc("GET /api/chirps", apiCfg.handlerGetChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerGetChirp)
-
 	mux.HandleFunc("POST /api/chirps", apiCfg.handlerCreateChirp)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.handlerDeleteChirp)
+
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
+	mux.HandleFunc("PUT /api/users", apiCfg.handlerUpdateUser)
 	mux.HandleFunc("POST /api/login", apiCfg.handlerLoginUser)
 
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
+
+	mux.HandleFunc("POST /api/refresh", apiCfg.handlerRefreshToken)
+	mux.HandleFunc("POST /api/revoke", apiCfg.handlerRevokeRefreshToken)
+
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerUpgradeUser)
 
 	s := &http.Server{
 		Addr:    ":" + port,

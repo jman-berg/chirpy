@@ -1,4 +1,4 @@
---+goose Up
+-- +goose Up
 
 CREATE TABLE users (
 	id UUID PRIMARY KEY,
